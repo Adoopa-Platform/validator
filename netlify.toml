@@ -1,0 +1,10 @@
+[[redirects]]
+  from = "/validate"
+  to = "/.netlify/functions/validate"
+  status = 200
+
+[build]
+  functions = "functions"
+
+[build.environment]
+  NODE_VERSION = "20.12.2"
