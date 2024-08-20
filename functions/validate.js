@@ -9,7 +9,7 @@ const provider = new ethers.JsonRpcProvider(process.env.MAINNET_ENDPOINT);
 const contract = new ethers.Contract(process.env.CONTRACT_ADDRESS, CONTRACT_ABI, provider);
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
-const REACTION_HANDLERS = [findRecast, findQuote];
+const REACTION_HANDLERS = [findRecast, findQuote, findLike];
 
 exports.handler = async (event) => {
     try {
@@ -67,28 +67,86 @@ const findReactionCreateTimeMs = async (reactionType, receiverFid, castHash) => 
 }
 
 async function findQuote(receiverFid, castHash) {
+    let cursor = null;
+
     try {
-        const response = await client.fetchAllCastsCreatedByUser(receiverFid);
-        return response.result.casts.find(cast =>
-            cast.embeds.some(embed =>
-                embed.castId &&
-                embed.castId.hash === castHash
-            )
-        );
+        while (true) {
+            const response = await client.fetchAllCastsCreatedByUser(receiverFid, { cursor });
+            const cast = response.result.casts.find(cast =>
+                cast.embeds.some(embed =>
+                    embed.castId &&
+                    embed.castId.hash === castHash
+                )
+            );
+
+            if (cast) {
+                return cast;
+            }
+
+            cursor = response.result.next.cursor;
+
+            if (!cursor) {
+                break;
+            }
+        }
     } catch (error) {
-        console.error('Error fetching quotes: ', error)
+        console.error('Error fetching quotes: ', error);
         return null;
     }
+
+    return null;
 }
 
 async function findRecast(receiverFid, castHash)  {
+    let cursor = null;
+
     try {
-        const response = await client.fetchReactionsForCast(castHash, ReactionsType.Recasts);
-        return response.reactions.find(recast => recast.user.fid === receiverFid);
+        while (true) {
+            const response = await client.fetchReactionsForCast(castHash, ReactionsType.Recasts, { cursor });
+            const recast = response.reactions.find(recast => recast.user.fid === receiverFid);
+
+            if (recast) {
+                return recast;
+            }
+
+            cursor = response.next.cursor;
+
+            if (!cursor) {
+                break;
+            }
+        }
     } catch (error) {
         console.error('Error fetching recasts: ', error)
         return null;
     }
+
+    return null;
+}
+
+async function findLike(receiverFid, castHash)  {
+    let cursor = null;
+
+    try {
+        while (true) {
+            const response = await client.fetchReactionsForCast(castHash, ReactionsType.Likes, { cursor });
+            const like = response.reactions.find(like => like.user.fid === receiverFid);
+
+            if (like) {
+                return like;
+            }
+
+            cursor = response.next.cursor;
+
+            if (!cursor) {
+                break;
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching likes: ', error)
+        return null;
+    }
+
+    return null;
 }
 
 const fetchOfferById = async (offerId) => {
@@ -104,6 +162,7 @@ const fetchOfferById = async (offerId) => {
         const cast = await client.lookUpCastByHashOrWarpcastUrl(castUrl, CastParamType.Url);
 
         return {
+            id: offerId,
             state: Number(state),
             type: Number(type),
             receiverFid: receiver.user.fid,
